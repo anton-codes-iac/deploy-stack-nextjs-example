@@ -27,5 +27,7 @@ COPY --from=builder /app/public ./public
 
 EXPOSE 3000
 
+ENV HOSTNAME="0.0.0.0"
+
 # Start the standalone Node.js server
 CMD ["node", "server.js"]
