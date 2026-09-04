@@ -2,6 +2,10 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
 
+# FIX 1: Upgrade Alpine system packages & upgrade global NPM to patch 'tar' and 'pacote' CVEs
+RUN apk upgrade --no-cache && \
+    npm install -g npm@latest
+
 # Copy package files and install dependencies
 COPY package.json package-lock.json* ./
 RUN npm ci
@@ -17,8 +21,11 @@ RUN npm run build
 FROM node:22-alpine AS runner
 WORKDIR /app
 
+# FIX 2: Upgrade Alpine packages in the final runtime to patch 'libcrypto3' / 'libssl3' DoS CVEs
+RUN apk upgrade --no-cache
+
 ENV NODE_ENV=production
-ENV PORT=3000
+ENV PORT={{PORT}}
 ENV HOSTNAME="0.0.0.0"
 
 # Create an unprivileged user and group
@@ -33,7 +40,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 # Switch to the unprivileged user before executing
 USER nextjs
 
-EXPOSE 3000
+EXPOSE {{PORT}}
 
 # Start the standalone Node.js server
 CMD ["node", "server.js"]
