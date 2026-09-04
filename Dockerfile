@@ -1,5 +1,5 @@
 # Stage 1: Install dependencies and build the app
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 
 # Copy package files and install dependencies
@@ -14,20 +14,26 @@ COPY . .
 RUN npm run build
 
 # Stage 2: Production environment
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
-ENV PORT={{PORT}}
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
 
-# Copy the standalone output from the builder stage
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
+# Create an unprivileged user and group
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nextjs -u 1001 -G nodejs
+
+# Copy the standalone output and assign ownership to the unprivileged user
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+
+# Switch to the unprivileged user before executing
+USER nextjs
 
 EXPOSE 3000
-
-ENV HOSTNAME="0.0.0.0"
 
 # Start the standalone Node.js server
 CMD ["node", "server.js"]

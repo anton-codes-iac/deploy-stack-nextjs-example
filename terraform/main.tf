@@ -1,6 +1,12 @@
-# create-cloud-stack generated infrastructure
+# deploy-stack generated infrastructure
 provider "aws" {
-  region = "us-east-2"
+  region = "us-east-1"
+
+  default_tags {
+    tags = {
+      ManagedBy = "deploy-stack"
+    }
+  }
 }
 
 locals {
@@ -10,15 +16,20 @@ locals {
 
 # --- CloudWatch Logs ---
 resource "aws_cloudwatch_log_group" "app_logs" {
-  name              = "/ecs/my-aws-next-app"
+  name              = "/ecs/deploy-stack-nextjs-example"
   retention_in_days = 14
 }
 
 # --- ECR Repository ---
 resource "aws_ecr_repository" "app" {
-  name                 = "my-aws-next-app-repo"
+  name                 = "deploy-stack-nextjs-example-repo"
+  # trivy:ignore:AVD-AWS-0031 - Mutable tags allow the CI/CD pipeline to reuse the 'latest' tag for simplified deployments
   image_tag_mutability = "MUTABLE"
   force_delete         = true
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
 }
 
 # --- IAM: Execution Role ---
@@ -34,7 +45,7 @@ data "aws_iam_policy_document" "ecs_trust" {
 }
 
 resource "aws_iam_role" "execution_role" {
-  name               = "my-aws-next-app-execution-role"
+  name               = "deploy-stack-nextjs-example-execution-role"
   assume_role_policy = data.aws_iam_policy_document.ecs_trust.json
 }
 
@@ -46,18 +57,18 @@ resource "aws_iam_role_policy_attachment" "execution_role_policy" {
 # --- IAM: Task Role ---
 # Allows your application code running INSIDE the container to access AWS services
 resource "aws_iam_role" "task_role" {
-  name               = "my-aws-next-app-task-role"
+  name               = "deploy-stack-nextjs-example-task-role"
   assume_role_policy = data.aws_iam_policy_document.ecs_trust.json
 }
 
 # --- ECS Cluster ---
 resource "aws_ecs_cluster" "main" {
-  name = "my-aws-next-app-cluster"
+  name = "deploy-stack-nextjs-example-cluster"
 }
 
 # --- ECS Task Definition ---
 resource "aws_ecs_task_definition" "app" {
-  family                   = "my-aws-next-app-task"
+  family                   = "deploy-stack-nextjs-example-task"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   cpu                      = "256"
@@ -67,18 +78,27 @@ resource "aws_ecs_task_definition" "app" {
 
   container_definitions = jsonencode([
     {
-      name      = "my-aws-next-app-container"
+      name      = "deploy-stack-nextjs-example-container"
       image     = "${aws_ecr_repository.app.repository_url}:latest"
       essential = true
 
-      # Dynamically map every secret key found in the local JSON file
-      secrets = [
-        for key in local.secret_keys : {
-          name      = key
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:${key}::"
-        }
+      environment = [
+        
       ]
 
+      # Dynamically map every secret key found in the local JSON file
+      secrets = concat(
+        [
+          for key in local.secret_keys : {
+            name      = key
+            valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:${key}::"
+          }
+        ],
+        [
+          
+        ]
+      )
+      
       portMappings = [
         {
           containerPort = 3000
@@ -91,7 +111,7 @@ resource "aws_ecs_task_definition" "app" {
         logDriver = "awslogs"
         options = {
           "awslogs-group"         = aws_cloudwatch_log_group.app_logs.name
-          "awslogs-region"        = "us-east-2"
+          "awslogs-region"        = "us-east-1"
           "awslogs-stream-prefix" = "ecs"
         }
       }
@@ -100,22 +120,24 @@ resource "aws_ecs_task_definition" "app" {
 }
 
 # --- Application Load Balancer ---
+# trivy:ignore:AVD-AWS-0053 - This ALB is intended to be publicly facing behind CloudFront
 resource "aws_lb" "main" {
-  name               = "my-aws-next-app-alb"
+  name               = "deploy-stack-nextjs-example-alb"
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
   subnets            = aws_subnet.public[*].id
+  drop_invalid_header_fields = true
 }
 
 resource "aws_lb_target_group" "app" {
-  name        = "my-aws-next-app-tg"
+  name        = "deploy-stack-nextjs-example-tg"
   port        = 3000
   protocol    = "HTTP"
   vpc_id      = aws_vpc.main.id
   target_type = "ip"
 
   health_check {
-    path                = "/api/health"
+    path                = "/"
     matcher             = "200-399"
     interval            = 30
     timeout             = 5
@@ -124,6 +146,7 @@ resource "aws_lb_target_group" "app" {
   }
 }
 
+# trivy:ignore:AVD-AWS-0054 - CloudFront handles HTTPS edge termination; ALB uses HTTP to avoid complex ACM DNS validation for users
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
   port              = "80"
@@ -137,7 +160,7 @@ resource "aws_lb_listener" "http" {
 
 # --- ECS Service ---
 resource "aws_ecs_service" "app" {
-  name            = "my-aws-next-app-service"
+  name            = "deploy-stack-nextjs-example-service"
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.app.arn
   launch_type     = "FARGATE"
@@ -151,7 +174,7 @@ resource "aws_ecs_service" "app" {
 
   load_balancer {
     target_group_arn = aws_lb_target_group.app.arn
-    container_name   = "my-aws-next-app-container"
+    container_name   = "deploy-stack-nextjs-example-container"
     container_port   = 3000
   }
 
@@ -160,7 +183,7 @@ resource "aws_ecs_service" "app" {
 
 # Allow the ECS agent to read the specific secret from Secrets Manager
 resource "aws_iam_role_policy" "secrets_policy" {
-  name   = "my-aws-next-app-secrets-policy"
+  name   = "deploy-stack-nextjs-example-secrets-policy"
   role   = aws_iam_role.execution_role.id
   policy = jsonencode({
     Version = "2012-10-17"
@@ -175,12 +198,29 @@ resource "aws_iam_role_policy" "secrets_policy" {
 }
 
 # --- Outputs ---
-output "website_url" {
-  description = "The public URL of your load balancer"
+output "alb_direct_url" {
+  description = "Direct Load Balancer URL (Bypasses CloudFront/CDN)"
   value       = "http://${aws_lb.main.dns_name}"
 }
 
 output "ecr_repository_url" {
   description = "The URL of the ECR repository"
   value       = aws_ecr_repository.app.repository_url
+}
+
+# --- CloudWatch Alarms ---
+resource "aws_cloudwatch_metric_alarm" "alb_5xx_errors" {
+  alarm_name          = "deploy-stack-nextjs-example-high-5xx-errors"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "HTTPCode_Target_5XX_Count"
+  namespace           = "AWS/ApplicationELB"
+  period              = "60"
+  statistic           = "Sum"
+  threshold           = "10"
+  alarm_description   = "Triggers if the ALB receives more than 10 5XX errors in 2 minutes."
+  
+  dimensions = {
+    LoadBalancer = aws_lb.main.arn_suffix
+  }
 }

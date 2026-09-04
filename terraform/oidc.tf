@@ -30,7 +30,7 @@ locals {
 
 # Create the IAM Role that GitHub Actions will assume
 resource "aws_iam_role" "github_actions" {
-  name = "my-aws-next-app-github-actions-role"
+  name = "deploy-stack-nextjs-example-github-actions-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

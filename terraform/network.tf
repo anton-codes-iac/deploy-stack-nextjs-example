@@ -5,7 +5,7 @@ resource "aws_vpc" "main" {
   enable_dns_support   = true
 
   tags = {
-    Name = "my-aws-next-app-vpc"
+    Name = "deploy-stack-nextjs-example-vpc"
   }
 }
 
@@ -19,6 +19,7 @@ resource "aws_internet_gateway" "main" {
 }
 
 # Create 2 Public Subnets
+# trivy:ignore:AVD-AWS-0164 - Public subnets are used to avoid the $30/mo cost of a NAT Gateway for outbound container traffic
 resource "aws_subnet" "public" {
   count                   = 2
   vpc_id                  = aws_vpc.main.id
@@ -27,7 +28,7 @@ resource "aws_subnet" "public" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name = "my-aws-next-app-public-subnet-${count.index + 1}"
+    Name = "deploy-stack-nextjs-example-public-subnet-${count.index + 1}"
   }
 }
 
@@ -49,7 +50,7 @@ resource "aws_route_table_association" "public" {
 # --- Security Groups ---
 # ALB SG: Allow public internet access on HTTP
 resource "aws_security_group" "alb" {
-  name        = "my-aws-next-app-alb-sg"
+  name        = "deploy-stack-nextjs-example-alb-sg"
   description = "Allow inbound HTTP to ALB"
   vpc_id      = aws_vpc.main.id
 
@@ -64,13 +65,14 @@ resource "aws_security_group" "alb" {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
+    # trivy:ignore:AVD-AWS-0104 - Allow ALB to route out to standard AWS services
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
 
 # ECS SG: Allow traffic ONLY from the ALB on the app's specific port
 resource "aws_security_group" "ecs_tasks" {
-  name        = "my-aws-next-app-ecs-sg"
+  name        = "deploy-stack-nextjs-example-ecs-sg"
   description = "Allow inbound access from the ALB only"
   vpc_id      = aws_vpc.main.id
 
@@ -85,6 +87,7 @@ resource "aws_security_group" "ecs_tasks" {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
+    # trivy:ignore:AVD-AWS-0104 - Allow containers to pull images and hit external APIs
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
