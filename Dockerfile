@@ -25,7 +25,7 @@ WORKDIR /app
 RUN apk upgrade --no-cache
 
 ENV NODE_ENV=production
-ENV PORT={{PORT}}
+ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 # Create an unprivileged user and group
@@ -40,7 +40,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 # Switch to the unprivileged user before executing
 USER nextjs
 
-EXPOSE {{PORT}}
+EXPOSE 3000
 
 # Start the standalone Node.js server
 CMD ["node", "server.js"]
