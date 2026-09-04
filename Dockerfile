@@ -21,8 +21,17 @@ RUN npm run build
 FROM node:22-alpine AS runner
 WORKDIR /app
 
-# FIX 2: Upgrade Alpine packages in the final runtime to patch 'libcrypto3' / 'libssl3' DoS CVEs
-RUN apk upgrade --no-cache
+# FIX 2: Upgrade Alpine packages and absolutely destroy npm, yarn, and corepack
+# to eliminate all remaining Critical/High container vulnerabilities.
+RUN apk upgrade --no-cache && \
+    rm -rf /usr/local/lib/node_modules/npm \
+    /usr/local/bin/npm \
+    /usr/local/bin/npx \
+    /opt/yarn-* \
+    /usr/local/bin/yarn \
+    /usr/local/bin/yarnpkg \
+    /usr/local/lib/node_modules/corepack \
+    /usr/local/bin/corepack
 
 ENV NODE_ENV=production
 ENV PORT=3000
